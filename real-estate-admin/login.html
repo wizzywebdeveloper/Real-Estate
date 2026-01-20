@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Login - Luxe Estates</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 h-screen flex items-center justify-center p-6">
+
+    <div class="max-w-md w-full bg-white p-8 rounded-xl shadow-lg border border-gray-200">
+        <h2 id="formTitle" class="text-2xl font-bold text-gray-800 text-center mb-6">Agent Login</h2>
+        
+        <form id="authForm" class="space-y-4">
+            <div id="signUpFields" class="hidden space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Full Name</label>
+                    <input type="text" id="fullName" class="w-full p-2 border rounded mt-1 outline-blue-500 bg-gray-50" placeholder="Full name">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Residential Address</label>
+                    <input type="text" id="address" class="w-full p-2 border rounded mt-1 outline-blue-500 bg-gray-50" placeholder="123 Street Name, City">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Email Address</label>
+                <input type="email" id="email" required class="w-full p-2 border rounded mt-1 outline-blue-500 bg-gray-50" placeholder="agent@example.com">
+            </div>
+
+            <div id="passwordField">
+                <div class="flex justify-between items-center mb-1">
+                    <label class="block text-sm font-medium text-gray-700">Password</label>
+                    <button type="button" id="forgotBtn" onclick="handleForgotPassword()" class="text-xs text-blue-600 hover:underline">
+                        Forgot Password?
+                    </button>
+                </div>
+                
+                <div class="relative">
+                    <input type="password" id="password" required class="w-full p-2 pr-10 border rounded outline-blue-500 bg-gray-50" placeholder="••••••••">
+                    <button type="button" id="togglePassword" onclick="togglePasswordVisibility()" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-blue-600 transition-colors">
+                        <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <button type="submit" id="authBtn" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition shadow-md">
+                Sign In
+            </button>
+        </form>
+
+        <div class="mt-6 text-center text-sm">
+            <p id="toggleText" class="text-gray-600">
+                Don't have an account? 
+                <button onclick="toggleAuthMode()" class="text-blue-600 font-bold hover:underline">Sign Up</button>
+            </p>
+        </div>
+
+        <div id="statusMsg" class="mt-4 hidden p-3 rounded text-center text-sm font-bold"></div>
+    </div>
+
+    <script>
+        function togglePasswordVisibility() {
+            const passwordInput = document.getElementById('password');
+            const eyeIcon = document.getElementById('eyeIcon');
+            const isPassword = passwordInput.type === 'password';
+            passwordInput.type = isPassword ? 'text' : 'password';
+            
+            eyeIcon.innerHTML = isPassword 
+                ? `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>`
+                : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>`;
+        }
+    </script>
+
+    <script type="module">
+        import { supabase } from './supabase.js';
+
+        const authForm = document.getElementById('authForm');
+        const statusMsg = document.getElementById('statusMsg');
+        const authBtn = document.getElementById('authBtn');
+        const formTitle = document.getElementById('formTitle');
+        const toggleText = document.getElementById('toggleText');
+        const forgotBtn = document.getElementById('forgotBtn');
+        const signUpFields = document.getElementById('signUpFields');
+        
+        let isSignUpMode = false;
+
+        window.toggleAuthMode = function() {
+            isSignUpMode = !isSignUpMode;
+            formTitle.innerText = isSignUpMode ? "Create Agent Account" : "Agent Login";
+            authBtn.innerText = isSignUpMode ? "Sign Up" : "Sign In";
+            forgotBtn.style.display = isSignUpMode ? 'none' : 'inline-block';
+            
+            const fullNameInput = document.getElementById('fullName');
+            if (isSignUpMode) {
+                signUpFields.classList.remove('hidden');
+                fullNameInput.setAttribute("required", "true");
+            } else {
+                signUpFields.classList.add('hidden');
+                fullNameInput.removeAttribute("required");
+            }
+
+            toggleText.innerHTML = isSignUpMode 
+                ? 'Already have an account? <button onclick="toggleAuthMode()" class="text-blue-600 font-bold hover:underline">Sign In</button>'
+                : 'Don\'t have an account? <button onclick="toggleAuthMode()" class="text-blue-600 font-bold hover:underline">Sign Up</button>';
+        };
+
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            statusMsg.classList.add('hidden');
+            authBtn.disabled = true;
+            authBtn.innerText = "Processing...";
+
+            try {
+                let result;
+                if (isSignUpMode) {
+                    const fullName = document.getElementById('fullName').value;
+                    const address = document.getElementById('address').value;
+                    if (!fullName.trim()) throw new Error("Please enter your full name.");
+
+                    result = await supabase.auth.signUp({ 
+                        email, 
+                        password,
+                        options: {
+                            data: {
+                                full_name: fullName,
+                                residential_address: address
+                            }
+                        }
+                    });
+                } else {
+                    result = await supabase.auth.signInWithPassword({ email, password });
+                }
+
+                if (result.error) throw result.error;
+
+                if (isSignUpMode) {
+                    statusMsg.innerText = "Success! Check your email for a link.";
+                    statusMsg.className = "mt-4 p-3 rounded text-center text-sm font-bold bg-green-100 text-green-700";
+                    statusMsg.classList.remove('hidden');
+                } else {
+                    // --- ADMIN REDIRECT LOGIC ---
+                    const user = result.data.user;
+                    
+                    // Fetch profile to check is_admin column
+                    const { data: profile, error: profileError } = await supabase
+                        .from('profiles')
+                        .select('is_admin')
+                        .eq('id', user.id)
+                        .single();
+
+                    statusMsg.innerText = "Login successful! Redirecting...";
+                    statusMsg.className = "mt-4 p-3 rounded text-center text-sm font-bold bg-green-100 text-green-700";
+                    statusMsg.classList.remove('hidden');
+
+                    setTimeout(() => {
+                        // If profile exists and is_admin is true, go to admin dashboard
+                        if (profile && profile.is_admin === true) {
+                            window.location.href = 'admin-dashboard.html';
+                        } else {
+                            window.location.href = 'agent-dashboard.html';
+                        }
+                    }, 1000);
+                }
+            } catch (err) {
+                console.error("Auth Error:", err.message);
+                statusMsg.innerText = err.message;
+                statusMsg.className = "mt-4 p-3 rounded text-center text-sm font-bold bg-red-100 text-red-700";
+                statusMsg.classList.remove('hidden');
+            } finally {
+                authBtn.disabled = false;
+                authBtn.innerText = isSignUpMode ? "Sign Up" : "Sign In";
+            }
+        });
+
+        window.handleForgotPassword = async function() {
+            const email = document.getElementById('email').value;
+            if (!email) {
+                alert("Please enter your email address first.");
+                return;
+            }
+            
+            const resetUrl = window.location.href.replace('login.html', 'reset-password.html');
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: resetUrl,
+            });
+
+            if (error) {
+                statusMsg.innerText = error.message;
+                statusMsg.className = "mt-4 p-3 rounded text-center text-sm font-bold bg-red-100 text-red-700";
+            } else {
+                statusMsg.innerText = "Reset link sent! Check your email.";
+                statusMsg.className = "mt-4 p-3 rounded text-center text-sm font-bold bg-blue-100 text-blue-700";
+            }
+            statusMsg.classList.remove('hidden');
+        };
+    </script>
+</body>
+</html>

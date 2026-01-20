@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Dashboard - Luxe Estates</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+</head>
+
+<body class="bg-gray-50 min-h-screen">
+
+<nav class="bg-white shadow-sm p-4">
+    <div class="max-w-5xl mx-auto flex justify-between items-center">
+        <h1 class="text-xl font-bold text-gray-800">Agent Dashboard</h1>
+        <div class="flex items-center gap-4">
+            <span id="userEmail" class="text-sm text-gray-600 italic"></span>
+            <button onclick="logout()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm transition">
+                Logout
+            </button>
+        </div>
+    </div>
+</nav>
+
+    <a href="agent-messages.html"
+    class="bg-black text-white px-5 py-2 rounded-lg text-sm font-semibold">
+    📩 Messages
+    </a>
+
+
+<main class="max-w-5xl mx-auto p-6">
+
+    <!-- AGENT PROFILE -->
+    <div class="bg-white p-6 rounded-xl shadow mb-8 flex items-center gap-6">
+
+        <div class="relative">
+            <img id="agentAvatar"
+                 src="https://cdn-icons-png.flaticon.com/512/149/149071.png"
+                 class="w-24 h-24 rounded-full object-cover border">
+
+            <label class="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full cursor-pointer hover:bg-blue-700">
+                <i class="fas fa-camera text-sm"></i>
+                <input type="file" id="avatarInput" accept="image/*" hidden>
+            </label>
+        </div>
+
+        <div>
+            <h3 class="text-xl font-bold text-gray-800">Agent Profile</h3>
+            <p id="agentName" class="text-gray-500 text-sm mb-2"></p>
+            <p class="text-xs text-gray-400">Click the camera icon to upload photo</p>
+        </div>
+
+    </div>
+
+    <!-- PROPERTIES -->
+    <div class="flex justify-between items-center mb-8">
+        <h2 class="text-2xl font-semibold text-gray-800">My Property Listings</h2>
+        <a href="add-property.html" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium shadow transition">
+            ➕ List New Property
+        </a>
+    </div>
+
+    <div id="list" class="grid gap-4">
+        <div class="text-center py-10 text-gray-500">Loading your properties...</div>
+    </div>
+
+</main>
+
+<script type="module">
+import { supabase } from "./supabase.js";
+
+/* ---------------- INIT ---------------- */
+
+async function init() {
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (!user || error) {
+        window.location.href = "login.html";
+        return;
+    }
+
+    document.getElementById("userEmail").innerText = user.email;
+
+    document.getElementById("agentName").innerText =
+        user.user_metadata?.full_name || user.email;
+
+    if (user.user_metadata?.avatar_url) {
+        document.getElementById("agentAvatar").src = user.user_metadata.avatar_url;
+    }
+
+    setupAvatarUpload(user);
+    loadMyProperties(user.id);
+}
+
+/* ---------------- LOGOUT ---------------- */
+
+window.logout = async function () {
+    await supabase.auth.signOut();
+    window.location.href = "login.html";
+}
+
+/* ---------------- AVATAR UPLOAD (UPDATED) ---------------- */
+
+function setupAvatarUpload(user) {
+    const input = document.getElementById("avatarInput");
+    const avatarImg = document.getElementById("agentAvatar");
+
+    input.addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+
+        // 1. Upload to Supabase Storage
+        const { error: uploadError } = await supabase.storage
+            .from("avatars")
+            .upload(fileName, file, { upsert: true });
+
+        if (uploadError) {
+            alert("Upload failed: " + uploadError.message);
+            return;
+        }
+
+        // 2. Get public URL
+        const { data } = supabase.storage
+            .from("avatars")
+            .getPublicUrl(fileName);
+
+        const avatarUrl = data.publicUrl;
+
+        // 3. Save to auth profile
+        await supabase.auth.updateUser({
+            data: { avatar_url: avatarUrl }
+        });
+
+        // ✅ 4. SAVE TO ALL AGENT PROPERTIES
+        await supabase
+            .from("properties")
+            .update({ agent_avatar: avatarUrl })
+            .eq("user_id", user.id);
+
+        // 5. Update UI instantly
+        avatarImg.src = avatarUrl;
+
+        alert("Profile photo updated successfully");
+    });
+}
+
+/* ---------------- LOAD PROPERTIES ---------------- */
+
+async function loadMyProperties(userId) {
+    const listDiv = document.getElementById("list");
+
+    const { data, error } = await supabase
+        .from("properties")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+
+    if (error) {
+        listDiv.innerHTML = `<div class="bg-red-100 text-red-700 p-4 rounded">Error: ${error.message}</div>`;
+        return;
+    }
+
+    if (!data || data.length === 0) {
+        listDiv.innerHTML = `
+            <div class="bg-white border-2 border-dashed border-gray-200 rounded-xl p-12 text-center">
+                <p class="text-gray-500">You haven't listed any properties yet.</p>
+                <a href="add-property.html" class="text-blue-600 font-medium hover:underline mt-2 inline-block">Start listing now</a>
+            </div>`;
+        return;
+    }
+
+    listDiv.innerHTML = data.map(p => `
+        <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-100 flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <div class="h-16 w-16 rounded bg-gray-200 overflow-hidden">
+                    ${p.image_url ? `<img src="${p.image_url}" class="h-full w-full object-cover">` : ''}
+                </div>
+                <div>
+                    <h3 class="font-bold text-gray-800 text-lg">${p.title}</h3>
+                    <p class="text-sm text-gray-500">${p.location} • ₦${Number(p.price).toLocaleString()}</p>
+                </div>
+            </div>
+            <span class="px-3 py-1 rounded-full text-xs font-bold ${p.approved ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">
+                ${p.approved ? "✅ Approved & Live" : "⏳ Pending Review"}
+            </span>
+        </div>
+    `).join("");
+}
+
+init();
+</script>
+
+</body>
+</html>

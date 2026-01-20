@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add New Property</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-2xl font-bold text-gray-800">List New Property</h2>
+            <a href="index.html" class="text-blue-600 hover:underline">← Back to Home</a>
+        </div>
+
+        <form id="propertyForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Property Title</label>
+                <input type="text" id="title" required class="w-full p-2 border rounded mt-1">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Price (₦)</label>
+                    <input type="number" id="price" required class="w-full p-2 border rounded mt-1">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Location</label>
+                    <input type="text" id="location" required class="w-full p-2 border rounded mt-1" placeholder="e.g. Lekki, Lagos">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Bedrooms</label>
+                    <input type="number" id="bedrooms" required value="0" class="w-full p-2 border rounded mt-1">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Bathrooms</label>
+                    <input type="number" id="bathrooms" required value="0" class="w-full p-2 border rounded mt-1">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Sqft</label>
+                    <input type="number" id="sqft" required value="0" class="w-full p-2 border rounded mt-1">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Description</label>
+                <textarea id="description" rows="3" class="w-full p-2 border rounded mt-1"></textarea>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Property Images (Select up to 8)</label>
+                <input type="file" id="imageInput" accept=".jpg, .jpeg, .png, .webp" multiple required class="w-full mt-1 border p-2 rounded">
+                <p class="text-[10px] text-gray-500 mt-1 italic">Note: These will auto-swipe every 2 seconds on your listing.</p>
+                <div id="imagePreview" class="flex flex-wrap gap-2 mt-2"></div>
+            </div>
+
+            <button type="submit" id="submitBtn" class="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition">
+                Upload & Save Property
+            </button>
+        </form>
+        <div id="statusBox" class="mt-6 hidden p-4 rounded-lg text-center font-bold"></div>
+    </div>
+
+    <script type="module">
+        import { supabase } from './supabase.js';
+
+        const agents = [
+        { id: 1, name: "Michael Sterling", is_verified: true, rating: 4.8, photo: "..." },
+        { id: 2, name: "Sophia Laurent", is_verified: true, rating: 4.6, photo: "..." },
+        { id: 3, name: "David Chen", is_verified: false, rating: 4.2, photo: "..." }
+        ];
+
+
+        const propertyForm = document.getElementById('propertyForm');
+        const statusBox = document.getElementById('statusBox');
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+
+        imageInput.addEventListener('change', () => {
+            imagePreview.innerHTML = '';
+            const files = Array.from(imageInput.files);
+            if (files.length > 8) { 
+                alert("You can only upload a maximum of 8 images."); 
+                imageInput.value = ""; 
+                return; 
+            }
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    img.className = "w-20 h-20 object-cover rounded border shadow-sm";
+                    imagePreview.appendChild(img);
+                };
+                reader.readAsDataURL(file);
+            });
+        });
+
+        propertyForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submitBtn');
+            
+            submitBtn.disabled = true;
+            statusBox.classList.remove('hidden');
+            statusBox.className = "mt-6 p-4 rounded-lg text-center font-bold bg-blue-50 text-blue-700 block";
+            statusBox.innerText = "Initializing upload...";
+
+            try {
+                // 1. Get Logged-in Agent Data
+                const { data: { user }, error: userError } = await supabase.auth.getUser();
+                if (userError || !user) throw new Error("Please log in to your agent account.");
+
+                // FETCH REAL AGENT NAME FROM METADATA (Set during Login/Signup)
+                const realAgentName = user.user_metadata?.full_name || "Agent " + user.email.split('@')[0];
+
+                const agentAvatar = user.user_metadata?.avatar_url || null;
+
+
+                const matchedAgent = agents.find(a =>
+                    a.name.toLowerCase() === realAgentName.toLowerCase()
+                    );
+
+
+                const files = Array.from(imageInput.files);
+                const imageUrls = [];
+
+                // 2. Multi-Image Upload Loop
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    statusBox.innerText = `Uploading image ${i + 1} of ${files.length}...`;
+                    
+                    const fileName = `${Date.now()}_${i}_${file.name.replace(/\s+/g, '_')}`;
+                    const { error: upError } = await supabase.storage
+                        .from('property-images')
+                        .upload(fileName, file);
+
+                    if (upError) throw upError;
+
+                    const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(fileName);
+                    imageUrls.push(urlData.publicUrl);
+                }
+
+                statusBox.innerText = "Saving property details...";
+
+                // 3. Insert into DB (Includes Real Agent Name & Professional Verification state)
+                const { error: dbError } = await supabase.from('properties').insert([{
+
+                    agent_id: matchedAgent ? matchedAgent.id : null,
+                    rating: matchedAgent ? matchedAgent.rating : null,
+                    photo: matchedAgent ? matchedAgent.photo : null,
+                    is_verified: matchedAgent ? matchedAgent.is_verified : false,
+
+
+
+                    title: document.getElementById('title').value,
+                    price: parseFloat(document.getElementById('price').value),
+                    location: document.getElementById('location').value,
+                    description: document.getElementById('description').value,
+                    bedrooms: parseInt(document.getElementById('bedrooms').value) || 0,
+                    bathrooms: parseInt(document.getElementById('bathrooms').value) || 0,
+                    sqft: parseInt(document.getElementById('sqft').value) || 0,
+                    image_url: imageUrls[0], 
+                    images: imageUrls,
+                    agent_avatar: user.user_metadata?.avatar_url || null,      
+                    created_by: user.id,
+                    agent_name: realAgentName, // Saves the real name
+                    agent_avatar: agentAvatar,
+                    is_verified: false,        // Professional: starts as unverified until admin review
+                    approved: false
+                }]);
+
+                if (dbError) throw dbError;
+
+                statusBox.className = "mt-6 p-4 rounded-lg text-center font-bold bg-green-100 text-green-700 block";
+                statusBox.innerText = `Success! Listed by ${realAgentName}.`;
+                
+                setTimeout(() => {
+                    window.location.href = "agent-dashboard.html";
+                }, 1500);
+
+            } catch (err) {
+                statusBox.innerText = "Upload Failed: " + err.message;
+                statusBox.className = "mt-6 p-4 rounded-lg text-center font-bold bg-red-100 text-red-700 block";
+                submitBtn.disabled = false;
+                submitBtn.innerText = "Try Again";
+            }
+        });    
+    </script>
+</body>
+</html>

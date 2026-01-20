@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Property Details | Luxe Estates</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"/>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+
+<body class="bg-slate-50">
+
+<section class="max-w-7xl mx-auto px-6 py-12">
+  <div id="details-container" class="grid lg:grid-cols-3 gap-10"></div>
+</section>
+
+<script type="module">
+import { supabase } from './supabase.js';
+
+async function loadProperty() {
+  const id = new URLSearchParams(window.location.search).get('id');
+  const container = document.getElementById("details-container");
+
+  if(!id){
+    container.innerHTML = "<h2 class='text-xl font-bold'>Property not found</h2>";
+    return;
+  }
+
+  const { data: prop, error } = await supabase
+    .from("properties")
+    .select("*")
+    .eq("id", id)
+    .eq("approved", true)
+    .single();
+
+  if(error || !prop){
+    container.innerHTML = "<h2 class='text-xl font-bold'>Error loading property</h2>";
+    return;
+  }
+
+  const images = prop.images?.length ? prop.images : [prop.image_url];
+  const agentAvatar = prop.agent_avatar || null;
+
+  container.innerHTML = `
+  <!-- LEFT -->
+  <div class="lg:col-span-2 space-y-8">
+
+    <div class="relative overflow-hidden rounded-2xl shadow-lg">
+      <div id="slider" class="flex transition-transform duration-700">
+        ${images.map(img => `<img src="${img}" class="w-full h-[420px] object-cover flex-shrink-0">`).join("")}
+      </div>
+    </div>
+
+    <div class="bg-white p-8 rounded-2xl shadow">
+      <h1 class="text-3xl font-bold mb-3">${prop.title}</h1>
+      <p class="text-blue-600 text-2xl font-bold mb-2">₦${Number(prop.price).toLocaleString()}</p>
+      <p class="text-slate-500"><i class="fas fa-location-dot mr-2"></i>${prop.location}</p>
+    </div>
+
+    <div class="bg-white p-8 rounded-2xl shadow">
+      <h2 class="text-xl font-bold mb-3">Description</h2>
+      <p class="text-slate-600 leading-relaxed">${prop.description || "No description provided."}</p>
+    </div>
+
+    <div class="bg-white p-8 rounded-2xl shadow">
+      <h2 class="text-xl font-bold mb-4">Location & Neighborhood</h2>
+      <div id="map" class="w-full h-[350px] rounded-xl"></div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT -->
+  <div class="space-y-6">
+
+    <div class="bg-white p-6 rounded-2xl shadow">
+      <h3 class="font-bold text-lg mb-4">Agent</h3>
+
+      <div class="flex items-center gap-3 mb-4">
+
+        ${
+          agentAvatar
+          ? `<img src="${agentAvatar}" class="w-12 h-12 rounded-full object-cover border">`
+          : `<div class="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center">
+              <i class="fas fa-user text-slate-500"></i>
+            </div>`
+        }
+
+        <div>
+          <p class="font-bold">${prop.agent_name || "Verified Agent"}</p>
+          <p class="text-sm text-slate-500">Agent</p>
+        </div>
+      </div>
+
+      <input id="msgName" class="w-full border p-2 rounded mb-3" placeholder="Your name">
+      <input id="msgEmail" class="w-full border p-2 rounded mb-3" placeholder="Your email">
+      <textarea id="msgText" class="w-full border p-2 rounded mb-3" rows="3" placeholder="Message"></textarea>
+
+      <button id="sendMsgBtn"
+        class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700">
+        Send Message
+      </button>
+
+      <p id="msgStatus" class="text-sm mt-3 hidden"></p>
+    </div>
+
+  </div>
+  `;
+
+  initSlider(images.length);
+  initMap(prop.location);
+  setupMessageSystem(prop);
+}
+
+/* -------- IMAGE SLIDER -------- */
+
+function initSlider(total){
+  let index = 0;
+  setInterval(() => {
+    index = (index + 1) % total;
+    document.getElementById("slider").style.transform = `translateX(-${index * 100}%)`;
+  }, 3000);
+}
+
+/* -------- MAP -------- */
+
+async function initMap(location){
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${location}`);
+  const data = await res.json();
+
+  if(!data.length) return;
+
+  const lat = data[0].lat;
+  const lon = data[0].lon;
+
+  const map = L.map('map').setView([lat, lon], 14);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  L.marker([lat, lon]).addTo(map);
+}
+
+/* -------- MESSAGE SYSTEM -------- */
+
+function setupMessageSystem(prop){
+  document.getElementById("sendMsgBtn").addEventListener("click", async () => {
+
+    const name = document.getElementById("msgName").value.trim();
+    const email = document.getElementById("msgEmail").value.trim();
+    const message = document.getElementById("msgText").value.trim();
+    const status = document.getElementById("msgStatus");
+
+    if(!name || !email || !message){
+      status.className = "text-red-600 text-sm mt-3";
+      status.innerText = "Please fill all fields.";
+      status.classList.remove("hidden");
+      return;
+    }
+
+    status.className = "text-blue-600 text-sm mt-3";
+    status.innerText = "Sending message...";
+    status.classList.remove("hidden");
+
+    const { error } = await supabase.from("property_messages").insert([{
+      property_id: prop.id,
+      agent_id: prop.created_by,
+      sender_name: name,
+      sender_email: email,
+      message: message
+    }]);
+
+    if(error){
+      status.className = "text-red-600 text-sm mt-3";
+      status.innerText = "Failed to send message.";
+    } else {
+      status.className = "text-green-600 text-sm mt-3";
+      status.innerText = "Message sent successfully ✔";
+
+      document.getElementById("msgName").value = "";
+      document.getElementById("msgEmail").value = "";
+      document.getElementById("msgText").value = "";
+    }
+  });
+}
+
+loadProperty();
+</script>
+
+</body>
+</html>
